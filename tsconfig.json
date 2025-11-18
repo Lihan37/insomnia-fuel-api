@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",               // ESNext module system for modern JavaScript
+    "moduleResolution": "node",        // Resolve modules using Node.js resolution algorithm
+    "target": "ESNext",                // Use ESNext features (for example, async/await)
+    "esModuleInterop": true,           // Ensure compatibility with CommonJS modules
+    "strict": true,                    // Enable strict type checking
+    "skipLibCheck": true,              // Skip type checking in declaration files
+    "forceConsistentCasingInFileNames": true,
+    "sourceMap": true,                 // Enable source maps for debugging
+    "outDir": "./dist",                // Output compiled files into 'dist'
+    "rootDir": "./src",                // Source files located in the 'src' directory
+    "resolveJsonModule": true,         // Allow importing JSON files as modules
+    "allowJs": true,                   // Allow JavaScript files to be compiled
+    "experimentalDecorators": true,    // Allow usage of experimental decorators (if using decorators)
+    "moduleDetection": "force"         // Ensure module system detection
+  },
+  "include": ["src"],                  // Include 'src' folder for compilation
+  "exclude": ["node_modules", "dist"]  // Exclude unnecessary folders like 'node_modules' and 'dist'
+}

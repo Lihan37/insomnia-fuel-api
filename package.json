@@ -1,0 +1,35 @@
+{
+  "name": "insomnia-fuel-api",
+  "version": "1.0.0",
+  "description": "Insomnia Fuel API with Firebase Admin + MongoDB + TypeScript",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "seed:admins": "tsx src/scripts/seedAdmins.ts",
+    "check:admins": "tsx src/scripts/checkAdminClaims.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "firebase-admin": "^13.6.0",
+    "helmet": "^8.1.0",
+    "mongodb": "^6.20.0",
+    "morgan": "^1.10.1",
+    "stripe": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.5",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^24.10.0",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,23 @@
+# Node dependencies and builds
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Env/config secrets
+.env
+.env.*
+serviceAccountKey*.json
+
+# Logs and coverage
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+logs/
+*.log
+coverage/
+
+# Editor/OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
