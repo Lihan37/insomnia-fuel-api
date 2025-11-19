@@ -2,7 +2,6 @@
   "name": "insomnia-fuel-api",
   "version": "1.0.0",
   "description": "Insomnia Fuel API with Firebase Admin + MongoDB + TypeScript",
-  "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "seed:admins": "tsx src/scripts/seedAdmins.ts",

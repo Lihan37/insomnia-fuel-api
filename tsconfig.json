@@ -1,20 +1,21 @@
 {
   "compilerOptions": {
-    "module": "ESNext",               // ESNext module system for modern JavaScript
-    "moduleResolution": "node",        // Resolve modules using Node.js resolution algorithm
-    "target": "ESNext",                // Use ESNext features (for example, async/await)
-    "esModuleInterop": true,           // Ensure compatibility with CommonJS modules
-    "strict": true,                    // Enable strict type checking
-    "skipLibCheck": true,              // Skip type checking in declaration files
+    "target": "ES2020",                 // good modern JS, but not bleeding-edge
+    "module": "commonjs",              // 👈 switch to CommonJS
+    "moduleResolution": "node",        // classic Node resolution
+    "rootDir": "./src",
+    "outDir": "./dist",
+
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+
+    "strict": true,
+    "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "sourceMap": true,                 // Enable source maps for debugging
-    "outDir": "./dist",                // Output compiled files into 'dist'
-    "rootDir": "./src",                // Source files located in the 'src' directory
-    "resolveJsonModule": true,         // Allow importing JSON files as modules
-    "allowJs": true,                   // Allow JavaScript files to be compiled
-    "experimentalDecorators": true,    // Allow usage of experimental decorators (if using decorators)
-    "moduleDetection": "force"         // Ensure module system detection
+
+    "sourceMap": true,
+    "allowJs": false
   },
-  "include": ["src"],                  // Include 'src' folder for compilation
-  "exclude": ["node_modules", "dist"]  // Exclude unnecessary folders like 'node_modules' and 'dist'
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
 }
