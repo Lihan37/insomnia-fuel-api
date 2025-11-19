@@ -11,6 +11,9 @@ import {
 } from "../models/Order";
 import { authGuard, adminOnly } from "../middleware/auth";
 import { getCartByUid, clearCartByUid } from "../models/Cart";
+import { getUserByUID } from "../models/User";
+
+
 
 const router = Router();
 
@@ -159,6 +162,10 @@ router.get("/:sessionId", async (req: Request, res: Response) => {
       return res.json({ ok: true, session, order: null });
     }
 
+    // 🔥 NEW: load user and get displayName
+    const userDoc = await getUserByUID(uid);
+    const userName = userDoc?.displayName || null;
+
     // 3) Load cart from DB
     const cart = await getCartByUid(uid);
     if (!cart || cart.items.length === 0) {
@@ -177,7 +184,7 @@ router.get("/:sessionId", async (req: Request, res: Response) => {
     // 5) Create order ONCE for this session id
     const order = await createOrderFromCartOnce({
       userId: uid,
-      userName: null,
+      userName,   // 👈 pass real name now
       email,
       items,
       currency: session.currency || FALLBACK_CURRENCY,
@@ -202,5 +209,6 @@ router.get("/:sessionId", async (req: Request, res: Response) => {
       .json({ ok: false, message: "Failed to verify payment" });
   }
 });
+
 
 export default router;

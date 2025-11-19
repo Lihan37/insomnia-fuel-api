@@ -12,7 +12,7 @@ export type OrderStatus =
 export type PaymentStatus = "unpaid" | "paid";
 
 export interface IOrderItem {
-  menuItemId: string;   // MenuItem _id as string
+  menuItemId: string; // MenuItem _id as string
   name: string;
   price: number;
   quantity: number;
@@ -29,16 +29,16 @@ export interface IOrder {
   // cart data
   items: IOrderItem[];
 
-  subtotal: number;      // sum of item.price * qty
-  serviceFee: number;    // for now 0 – can change later
-  total: number;         // subtotal + serviceFee
-  currency: string;      // "aud", "bdt", etc
+  subtotal: number; // sum of item.price * qty
+  serviceFee: number; // for now 0 – can change later
+  total: number; // subtotal + serviceFee
+  currency: string; // "aud", "bdt", etc
 
   // status
-  status: OrderStatus;          // kitchen flow: pending → preparing → ready → completed / cancelled
+  status: OrderStatus; // kitchen flow: pending → preparing → ready → completed / cancelled
   paymentStatus: PaymentStatus; // Stripe state: paid / unpaid
 
-  stripeSessionId: string;      // to dedupe orders
+  stripeSessionId: string; // to dedupe orders
 
   completedAt?: Date | null;
 
@@ -74,6 +74,12 @@ export async function createOrderFromCartOnce(params: {
   const existing = await getOrderByStripeSessionId(params.stripeSessionId);
   if (existing) return existing; // ✅ already created, just return it
 
+  // 🔥 NEW: derive a safe display name
+  const safeUserName =
+    (params.userName && params.userName.trim()) ||
+    (params.email ? params.email.split("@")[0] : "") ||
+    "Guest";
+
   const subtotal = params.items.reduce(
     (sum, it) => sum + it.price * it.quantity,
     0
@@ -84,18 +90,17 @@ export async function createOrderFromCartOnce(params: {
 
   const doc: IOrder = {
     userId: params.userId,
-    userName: params.userName,
+    userName: safeUserName,             // 👈 use the safe value
     email: params.email,
     items: params.items,
     subtotal,
     serviceFee,
     total,
     currency: params.currency.toLowerCase(),
-    status: "pending",        // kitchen starts here
-    paymentStatus: "paid",    // we only call this after successful payment
+    status: "pending",
+    paymentStatus: "paid",
     stripeSessionId: params.stripeSessionId,
-
-    completedAt: null, 
+    completedAt: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -103,6 +108,7 @@ export async function createOrderFromCartOnce(params: {
   const res = await ordersCollection().insertOne(doc);
   return { ...doc, _id: res.insertedId };
 }
+
 
 /**
  * Paginated list for admin.
