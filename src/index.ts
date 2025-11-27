@@ -20,7 +20,7 @@ const app = express();
 // ===== Middleware =====
 app.use(
   cors({
-    origin: ["http://localhost:5173", "https://insomnia-fuel.netlify.app"], 
+    origin: ["http://localhost:5173", "https://insomnia-fuel.netlify.app", "https://insomniafuel.com.au"], 
     credentials: true,
   })
 );
