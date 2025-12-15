@@ -47,7 +47,13 @@ router.post(
       const line_items = cart.items.map((it) => ({
         price_data: {
           currency: CURRENCY,
-          product_data: { name: it.name },
+          product_data: {
+            name: it.name,
+            // so webhook can recover menuItemId later
+            metadata: {
+              menuItemId: it.menuItemId,
+            },
+          },
           // Stripe amounts are in the smallest currency unit (cents)
           unit_amount: Math.round(it.price * 100),
         },
@@ -59,8 +65,7 @@ router.post(
         mode: "payment",
         customer_email: email,
         line_items,
-        success_url:
-          `${CLIENT_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+        success_url: `${CLIENT_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${CLIENT_URL}/order`,
         metadata: {
           uid,

@@ -9,7 +9,7 @@ export type OrderStatus =
   | "completed"
   | "cancelled";
 
-export type PaymentStatus = "unpaid" | "paid";
+export type PaymentStatus = "unpaid" | "paid" | "refunded" | "disputed";
 
 export interface IOrderItem {
   menuItemId: string; // MenuItem _id as string
@@ -90,7 +90,7 @@ export async function createOrderFromCartOnce(params: {
 
   const doc: IOrder = {
     userId: params.userId,
-    userName: safeUserName,             // 👈 use the safe value
+    userName: safeUserName, // 👈 use the safe value
     email: params.email,
     items: params.items,
     subtotal,
@@ -98,7 +98,7 @@ export async function createOrderFromCartOnce(params: {
     total,
     currency: params.currency.toLowerCase(),
     status: "pending",
-    paymentStatus: "paid",
+    paymentStatus: "unpaid",
     stripeSessionId: params.stripeSessionId,
     completedAt: null,
     createdAt: now,
@@ -109,6 +109,51 @@ export async function createOrderFromCartOnce(params: {
   return { ...doc, _id: res.insertedId };
 }
 
+export async function createOrderFromStripeSessionOnce(params: {
+  userId: string | null;
+  userName: string | null;
+  email: string | null;
+  items: IOrderItem[];
+  currency: string;
+  stripeSessionId: string;
+  paymentStatus: PaymentStatus;
+}): Promise<IOrder> {
+  const existing = await getOrderByStripeSessionId(params.stripeSessionId);
+  if (existing) return existing;
+
+  const safeUserName =
+    (params.userName && params.userName.trim()) ||
+    (params.email ? params.email.split("@")[0] : "") ||
+    "Guest";
+
+  const subtotal = params.items.reduce(
+    (sum, it) => sum + it.price * it.quantity,
+    0
+  );
+  const serviceFee = 0;
+  const total = subtotal + serviceFee;
+  const now = new Date();
+
+  const doc: IOrder = {
+    userId: params.userId,
+    userName: safeUserName,
+    email: params.email,
+    items: params.items,
+    subtotal,
+    serviceFee,
+    total,
+    currency: params.currency.toLowerCase(),
+    status: "pending",
+    paymentStatus: params.paymentStatus,
+    stripeSessionId: params.stripeSessionId,
+    completedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const res = await ordersCollection().insertOne(doc);
+  return { ...doc, _id: res.insertedId };
+}
 
 /**
  * Paginated list for admin.

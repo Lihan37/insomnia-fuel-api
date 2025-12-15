@@ -5,19 +5,18 @@ import {
   getOrdersPaginated,
   updateOrderStatus,
   type OrderStatus,
-  createOrderFromCartOnce,
+  getOrderByStripeSessionId,
+  createOrderFromStripeSessionOnce,
   type IOrderItem,
   ordersCollection,
 } from "../models/Order";
 import { authGuard, adminOnly } from "../middleware/auth";
-import { getCartByUid, clearCartByUid } from "../models/Cart";
 import { getUserByUID } from "../models/User";
-
-
+import { clearCartByUid } from "../models/Cart";
 
 const router = Router();
 
-/** ---------- Stripe client ---------- */
+// ----- Stripe client for this route file -----
 const stripeSecret = process.env.STRIPE_SECRET_KEY;
 if (!stripeSecret) {
   throw new Error("Missing STRIPE_SECRET_KEY in .env");
@@ -26,8 +25,6 @@ if (!stripeSecret) {
 const stripe = new Stripe(stripeSecret, {
   apiVersion: "2024-06-20" as any,
 });
-
-const FALLBACK_CURRENCY = (process.env.STRIPE_CURRENCY || "aud").toLowerCase();
 
 /** ------------------------------------------------------------------
  *  Admin: list all orders (paginated)
@@ -55,16 +52,11 @@ router.get(
  *  Logged-in user: my own orders
  *  GET /api/orders/my
  * ------------------------------------------------------------------ */
-/** ------------------------------------------------------------------
- *  Logged-in user: my own orders
- *  GET /api/orders/my
- * ------------------------------------------------------------------ */
 router.get(
   "/my",
   authGuard,
   async (req: Request, res: Response) => {
     try {
-      // authGuard might attach uid in different shapes, so handle them all
       const anyReq = req as any;
       const uid: string | undefined =
         anyReq.uid ||
@@ -95,9 +87,8 @@ router.get(
   }
 );
 
-
 /** ------------------------------------------------------------------
- *  Admin: update kitchen status
+ *  Admin: update kitchen workflow status
  *  PUT /api/orders/:id
  * ------------------------------------------------------------------ */
 router.put(
@@ -123,9 +114,17 @@ router.put(
 );
 
 /** ------------------------------------------------------------------
- *  Stripe success → create order from cart (idempotent)
+ *  Stripe success fallback → ensure order exists
  *  GET /api/orders/:sessionId
  *  Called from CheckoutSuccess page.
+ *
+ *  - Verifies session with Stripe
+ *  - Ensures payment_status === "paid"
+ *  - Tries to find an order created by webhook
+ *  - If not found, creates order once from Stripe line_items
+ *
+ *  This is safe to keep even when webhook is active because
+ *  createOrderFromStripeSessionOnce is idempotent.
  * ------------------------------------------------------------------ */
 router.get("/:sessionId", async (req: Request, res: Response) => {
   const { sessionId } = req.params;
@@ -138,7 +137,9 @@ router.get("/:sessionId", async (req: Request, res: Response) => {
 
   try {
     // 1) Verify session with Stripe
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ["payment_intent"],
+    });
 
     if (!session || session.id !== sessionId) {
       return res
@@ -146,53 +147,60 @@ router.get("/:sessionId", async (req: Request, res: Response) => {
         .json({ ok: false, message: "Stripe session not found" });
     }
 
-    // 2) Extract uid & email from session (we set metadata.uid in checkout.ts)
-    const uid =
-      (session.metadata && (session.metadata as any).uid) ||
-      session.client_reference_id ||
-      null;
-
-    const email =
-      (session.customer_details && session.customer_details.email) ||
-      session.customer_email ||
-      null;
-
-    // If we can't map to a user/cart, still return Stripe session
-    if (!uid) {
-      return res.json({ ok: true, session, order: null });
+    // 2) Only treat as success if Stripe says it's paid
+    if (session.payment_status !== "paid") {
+      return res.status(400).json({
+        ok: false,
+        message: "Payment is not completed yet.",
+        session,
+      });
     }
 
-    // 🔥 NEW: load user and get displayName
-    const userDoc = await getUserByUID(uid);
-    const userName = userDoc?.displayName || null;
+    // 3) Try to find an existing order (webhook or previous call)
+    let order = await getOrderByStripeSessionId(sessionId);
 
-    // 3) Load cart from DB
-    const cart = await getCartByUid(uid);
-    if (!cart || cart.items.length === 0) {
-      // Cart might already be cleared; still return session
-      return res.json({ ok: true, session, order: null });
+    // 4) If missing, create it *once* from Stripe line_items
+    if (!order) {
+      const uid =
+        (session.metadata && (session.metadata as any).uid) ||
+        session.client_reference_id ||
+        null;
+
+      const email =
+        session.customer_details?.email || session.customer_email || null;
+
+      const userDoc = uid ? await getUserByUID(uid) : null;
+      const userName = userDoc?.displayName || null;
+
+      const lineItems = await stripe.checkout.sessions.listLineItems(
+        session.id,
+        { limit: 100 }
+      );
+
+      const items: IOrderItem[] = lineItems.data.map((li) => ({
+        // menuItemId was stored as price_data.product_data.metadata.menuItemId
+        menuItemId:
+          (li.price?.metadata?.menuItemId as string | undefined) || "",
+        name: li.description || li.price?.nickname || "Item",
+        price: (li.price?.unit_amount ?? 0) / 100, // cents → dollars
+        quantity: li.quantity ?? 1,
+      }));
+
+      order = await createOrderFromStripeSessionOnce({
+        userId: uid,
+        userName,
+        email,
+        items,
+        currency: session.currency || "aud",
+        stripeSessionId: session.id,
+        paymentStatus: "paid",
+      });
+
+      // Optional but nice: clear cart once we've recorded the order
+      if (uid) {
+        await clearCartByUid(uid);
+      }
     }
-
-    // 4) Build order items from cart
-    const items: IOrderItem[] = cart.items.map((it) => ({
-      menuItemId: it.menuItemId,
-      name: it.name,
-      price: it.price,
-      quantity: it.quantity,
-    }));
-
-    // 5) Create order ONCE for this session id
-    const order = await createOrderFromCartOnce({
-      userId: uid,
-      userName,   // 👈 pass real name now
-      email,
-      items,
-      currency: session.currency || FALLBACK_CURRENCY,
-      stripeSessionId: sessionId,
-    });
-
-    // 6) Clear cart now that order exists
-    await clearCartByUid(uid);
 
     return res.json({ ok: true, session, order });
   } catch (err: any) {
@@ -209,6 +217,5 @@ router.get("/:sessionId", async (req: Request, res: Response) => {
       .json({ ok: false, message: "Failed to verify payment" });
   }
 });
-
 
 export default router;
