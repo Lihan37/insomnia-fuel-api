@@ -120,10 +120,3 @@ export async function clearCart(uid: string) {
   return { ...cart, items: [], updatedAt: now } as ICart;
 }
 
-// -------------------------
-// Clear cart by uid (delete doc)
-// Used by Stripe order completion
-// -------------------------
-export async function clearCartByUid(uid: string): Promise<void> {
-  await cartsCollection().deleteOne({ uid });
-}

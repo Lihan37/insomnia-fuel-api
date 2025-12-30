@@ -1,30 +1,28 @@
 // src/routes/orders.ts
 import { Router, type Request, type Response } from "express";
-import Stripe from "stripe";
+import { ObjectId } from "mongodb";
 import {
   getOrdersPaginated,
   updateOrderStatus,
   type OrderStatus,
-  getOrderByStripeSessionId,
-  createOrderFromStripeSessionOnce,
-  type IOrderItem,
+  updatePaymentStatus,
+  createOrderFromCart,
   ordersCollection,
 } from "../models/Order";
 import { authGuard, adminOnly } from "../middleware/auth";
 import { getUserByUID } from "../models/User";
-import { clearCartByUid } from "../models/Cart";
+import { getCartByUid, clearCart } from "../models/Cart";
 
 const router = Router();
 
-// ----- Stripe client for this route file -----
-const stripeSecret = process.env.STRIPE_SECRET_KEY;
-if (!stripeSecret) {
-  throw new Error("Missing STRIPE_SECRET_KEY in .env");
+function isAdminEmail(email?: string | null) {
+  if (!email) return false;
+  const adminEmails = (process.env.ADMIN_EMAILS || "")
+    .split(/[,\s\n]+/)
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return adminEmails.includes(email.toLowerCase());
 }
-
-const stripe = new Stripe(stripeSecret, {
-  apiVersion: "2024-06-20" as any,
-});
 
 /** ------------------------------------------------------------------
  *  Admin: list all orders (paginated)
@@ -65,7 +63,7 @@ router.get(
         anyReq.user?.id;
 
       if (!uid) {
-        console.warn("⚠️ /api/orders/my called without uid on request");
+        console.warn("/api/orders/my called without uid on request");
         return res
           .status(401)
           .json({ ok: false, message: "Unauthenticated" });
@@ -88,6 +86,83 @@ router.get(
 );
 
 /** ------------------------------------------------------------------
+ *  Logged-in user: create order from cart
+ *  POST /api/orders
+ * ------------------------------------------------------------------ */
+router.post(
+  "/",
+  authGuard,
+  async (req: Request, res: Response) => {
+    try {
+      const uid = req.user?.uid;
+      if (!uid) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+
+      const cart = await getCartByUid(uid);
+      if (!cart || cart.items.length === 0) {
+        return res.status(400).json({ message: "Cart is empty" });
+      }
+
+      const userDoc = await getUserByUID(uid);
+      const order = await createOrderFromCart({
+        userId: uid,
+        userName: userDoc?.displayName || null,
+        email: userDoc?.email || req.user?.email || null,
+        items: cart.items,
+        currency: (process.env.ORDER_CURRENCY || "aud").toLowerCase(),
+      });
+
+      await clearCart(uid);
+
+      return res.status(201).json({ ok: true, order });
+    } catch (err) {
+      console.error("POST /api/orders error:", err);
+      return res.status(500).json({ message: "Failed to place order" });
+    }
+  }
+);
+
+/** ------------------------------------------------------------------
+ *  Logged-in user or admin: fetch a single order
+ *  GET /api/orders/:id
+ * ------------------------------------------------------------------ */
+router.get(
+  "/:id",
+  authGuard,
+  async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).json({ message: "Invalid order id" });
+      }
+
+      const order = await ordersCollection().findOne({ _id: new ObjectId(id) });
+      if (!order) {
+        return res.status(404).json({ message: "Order not found" });
+      }
+
+      const uid = req.user?.uid;
+      if (!uid) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+
+      const email = req.user?.email?.toLowerCase() || null;
+      const isAdmin = isAdminEmail(email);
+
+      if (!isAdmin && order.userId !== uid) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      return res.json({ ok: true, order });
+    } catch (err) {
+      console.error("GET /api/orders/:id error:", err);
+      return res.status(500).json({ message: "Failed to load order" });
+    }
+  }
+);
+
+/** ------------------------------------------------------------------
  *  Admin: update kitchen workflow status
  *  PUT /api/orders/:id
  * ------------------------------------------------------------------ */
@@ -98,124 +173,29 @@ router.put(
   async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const { status } = req.body as { status?: OrderStatus };
+      const { status, paymentStatus } = req.body as {
+        status?: OrderStatus;
+        paymentStatus?: "paid" | "unpaid";
+      };
 
-      if (!status) {
-        return res.status(400).json({ message: "Missing status" });
+      if (!status && !paymentStatus) {
+        return res
+          .status(400)
+          .json({ message: "Missing status or paymentStatus" });
       }
 
-      await updateOrderStatus(id, status);
-      return res.json({ message: "Status updated" });
+      if (status) {
+        await updateOrderStatus(id, status);
+      }
+      if (paymentStatus) {
+        await updatePaymentStatus(id, paymentStatus);
+      }
+      return res.json({ message: "Order updated" });
     } catch (err) {
       console.error("PUT /api/orders/:id error:", err);
-      return res.status(500).json({ message: "Failed to update status" });
+      return res.status(500).json({ message: "Failed to update order" });
     }
   }
 );
-
-/** ------------------------------------------------------------------
- *  Stripe success fallback → ensure order exists
- *  GET /api/orders/:sessionId
- *  Called from CheckoutSuccess page.
- *
- *  - Verifies session with Stripe
- *  - Ensures payment_status === "paid"
- *  - Tries to find an order created by webhook
- *  - If not found, creates order once from Stripe line_items
- *
- *  This is safe to keep even when webhook is active because
- *  createOrderFromStripeSessionOnce is idempotent.
- * ------------------------------------------------------------------ */
-router.get("/:sessionId", async (req: Request, res: Response) => {
-  const { sessionId } = req.params;
-
-  if (!sessionId) {
-    return res
-      .status(400)
-      .json({ ok: false, message: "Missing sessionId parameter" });
-  }
-
-  try {
-    // 1) Verify session with Stripe
-    const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ["payment_intent"],
-    });
-
-    if (!session || session.id !== sessionId) {
-      return res
-        .status(404)
-        .json({ ok: false, message: "Stripe session not found" });
-    }
-
-    // 2) Only treat as success if Stripe says it's paid
-    if (session.payment_status !== "paid") {
-      return res.status(400).json({
-        ok: false,
-        message: "Payment is not completed yet.",
-        session,
-      });
-    }
-
-    // 3) Try to find an existing order (webhook or previous call)
-    let order = await getOrderByStripeSessionId(sessionId);
-
-    // 4) If missing, create it *once* from Stripe line_items
-    if (!order) {
-      const uid =
-        (session.metadata && (session.metadata as any).uid) ||
-        session.client_reference_id ||
-        null;
-
-      const email =
-        session.customer_details?.email || session.customer_email || null;
-
-      const userDoc = uid ? await getUserByUID(uid) : null;
-      const userName = userDoc?.displayName || null;
-
-      const lineItems = await stripe.checkout.sessions.listLineItems(
-        session.id,
-        { limit: 100 }
-      );
-
-      const items: IOrderItem[] = lineItems.data.map((li) => ({
-        // menuItemId was stored as price_data.product_data.metadata.menuItemId
-        menuItemId:
-          (li.price?.metadata?.menuItemId as string | undefined) || "",
-        name: li.description || li.price?.nickname || "Item",
-        price: (li.price?.unit_amount ?? 0) / 100, // cents → dollars
-        quantity: li.quantity ?? 1,
-      }));
-
-      order = await createOrderFromStripeSessionOnce({
-        userId: uid,
-        userName,
-        email,
-        items,
-        currency: session.currency || "aud",
-        stripeSessionId: session.id,
-        paymentStatus: "paid",
-      });
-
-      // Optional but nice: clear cart once we've recorded the order
-      if (uid) {
-        await clearCartByUid(uid);
-      }
-    }
-
-    return res.json({ ok: true, session, order });
-  } catch (err: any) {
-    console.error("Error in GET /api/orders/:sessionId:", err);
-    const statusCode = err?.statusCode || err?.raw?.statusCode;
-    if (statusCode === 404) {
-      return res
-        .status(404)
-        .json({ ok: false, message: "Stripe session not found" });
-    }
-
-    return res
-      .status(500)
-      .json({ ok: false, message: "Failed to verify payment" });
-  }
-});
 
 export default router;

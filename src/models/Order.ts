@@ -30,15 +30,13 @@ export interface IOrder {
   items: IOrderItem[];
 
   subtotal: number; // sum of item.price * qty
-  serviceFee: number; // for now 0 – can change later
+  serviceFee: number; // for now 0 - can change later
   total: number; // subtotal + serviceFee
   currency: string; // "aud", "bdt", etc
 
   // status
-  status: OrderStatus; // kitchen flow: pending → preparing → ready → completed / cancelled
-  paymentStatus: PaymentStatus; // Stripe state: paid / unpaid
-
-  stripeSessionId: string; // to dedupe orders
+  status: OrderStatus; // kitchen flow: pending -> preparing -> ready -> completed / cancelled
+  paymentStatus: PaymentStatus; // unpaid until paid at cafe
 
   completedAt?: Date | null;
 
@@ -50,77 +48,14 @@ export function ordersCollection() {
   return getDb().collection<IOrder>("orders");
 }
 
-/**
- * Find order by Stripe session id – used to avoid duplicates.
- */
-export async function getOrderByStripeSessionId(
-  sessionId: string
-): Promise<IOrder | null> {
-  return await ordersCollection().findOne({ stripeSessionId: sessionId });
-}
-
-/**
- * Create an order from cart data, but **only if one doesn’t already exist**
- * for this Stripe session id. This is the key to stop duplicates.
- */
-export async function createOrderFromCartOnce(params: {
+export async function createOrderFromCart(params: {
   userId: string | null;
   userName: string | null;
   email: string | null;
   items: IOrderItem[];
   currency: string;
-  stripeSessionId: string;
+  paymentStatus?: PaymentStatus;
 }): Promise<IOrder> {
-  const existing = await getOrderByStripeSessionId(params.stripeSessionId);
-  if (existing) return existing; // ✅ already created, just return it
-
-  // 🔥 NEW: derive a safe display name
-  const safeUserName =
-    (params.userName && params.userName.trim()) ||
-    (params.email ? params.email.split("@")[0] : "") ||
-    "Guest";
-
-  const subtotal = params.items.reduce(
-    (sum, it) => sum + it.price * it.quantity,
-    0
-  );
-  const serviceFee = 0;
-  const total = subtotal + serviceFee;
-  const now = new Date();
-
-  const doc: IOrder = {
-    userId: params.userId,
-    userName: safeUserName, // 👈 use the safe value
-    email: params.email,
-    items: params.items,
-    subtotal,
-    serviceFee,
-    total,
-    currency: params.currency.toLowerCase(),
-    status: "pending",
-    paymentStatus: "unpaid",
-    stripeSessionId: params.stripeSessionId,
-    completedAt: null,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  const res = await ordersCollection().insertOne(doc);
-  return { ...doc, _id: res.insertedId };
-}
-
-export async function createOrderFromStripeSessionOnce(params: {
-  userId: string | null;
-  userName: string | null;
-  email: string | null;
-  items: IOrderItem[];
-  currency: string;
-  stripeSessionId: string;
-  paymentStatus: PaymentStatus;
-}): Promise<IOrder> {
-  const existing = await getOrderByStripeSessionId(params.stripeSessionId);
-  if (existing) return existing;
-
   const safeUserName =
     (params.userName && params.userName.trim()) ||
     (params.email ? params.email.split("@")[0] : "") ||
@@ -144,8 +79,7 @@ export async function createOrderFromStripeSessionOnce(params: {
     total,
     currency: params.currency.toLowerCase(),
     status: "pending",
-    paymentStatus: params.paymentStatus,
-    stripeSessionId: params.stripeSessionId,
+    paymentStatus: params.paymentStatus ?? "unpaid",
     completedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -195,4 +129,17 @@ export async function updateOrderStatus(id: string, status: OrderStatus) {
   }
 
   await ordersCollection().updateOne({ _id }, { $set: update });
+}
+
+export async function updatePaymentStatus(
+  id: string,
+  paymentStatus: PaymentStatus
+) {
+  const _id = new ObjectId(id);
+  const now = new Date();
+
+  await ordersCollection().updateOne(
+    { _id },
+    { $set: { paymentStatus, updatedAt: now } }
+  );
 }
