@@ -23,6 +23,10 @@ app.use(
       "http://localhost:5173",
       "https://insomnia-fuel.netlify.app",
       "https://insomniafuel.com.au",
+      "https://www.insomniafuel.com.au",
+      ...(process.env.CORS_ORIGINS
+        ? process.env.CORS_ORIGINS.split(/[, \n]+/).filter(Boolean)
+        : []),
     ],
     credentials: true,
   })
