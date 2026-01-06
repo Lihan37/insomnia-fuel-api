@@ -12,6 +12,7 @@ import menuRoutes from "./routes/menu";
 import ordersRoutes from "./routes/orders";
 import cartRoutes from "./routes/cart";
 import contactRoutes from "./routes/contact";
+import galleryRoutes from "./routes/gallery";
 
 const app = express();
 
@@ -37,6 +38,7 @@ app.use("/api/menu", menuRoutes);
 app.use("/api/orders", ordersRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/contact", contactRoutes);
+app.use("/api/gallery", galleryRoutes);
 
 // Health check
 app.get("/api/health", (_req: Request, res: Response) => {

@@ -17,6 +17,7 @@ async function seedAdmins() {
     const user = await admin.auth().getUserByEmail(email);
 
     await admin.auth().setCustomUserClaims(user.uid, {
+      admin: true,
       role: "admin",
     });
 
