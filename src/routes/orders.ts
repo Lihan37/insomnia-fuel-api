@@ -115,13 +115,14 @@ router.post(
       });
 
       await clearCart(uid);
-      try {
-        await sendNewOrderEmail(order);
-      } catch (err) {
-        console.error("Failed to send new order email:", err);
-      }
 
-      return res.status(201).json({ ok: true, order });
+      // Send response first; email runs in the background to avoid blocking orders.
+      res.status(201).json({ ok: true, order });
+
+      void sendNewOrderEmail(order).catch((err) => {
+        console.error("Failed to send new order email:", err);
+      });
+      return;
     } catch (err) {
       console.error("POST /api/orders error:", err);
       return res.status(500).json({ message: "Failed to place order" });

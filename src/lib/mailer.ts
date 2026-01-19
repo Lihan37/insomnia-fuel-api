@@ -75,6 +75,9 @@ export async function sendNewOrderEmail(order: IOrder) {
     host: mailConfig.host,
     port: mailConfig.port,
     secure: mailConfig.secure,
+    connectionTimeout: Number(process.env.SMTP_CONNECT_TIMEOUT_MS || 8000),
+    greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS || 8000),
+    socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS || 8000),
     auth:
       mailConfig.user && mailConfig.pass
         ? { user: mailConfig.user, pass: mailConfig.pass }
