@@ -12,6 +12,7 @@ import {
 import { authGuard, adminOnly } from "../middleware/auth";
 import { getUserByUID } from "../models/User";
 import { getCartByUid, clearCart } from "../models/Cart";
+import { sendNewOrderEmail } from "../lib/mailer";
 
 const router = Router();
 
@@ -114,6 +115,11 @@ router.post(
       });
 
       await clearCart(uid);
+      try {
+        await sendNewOrderEmail(order);
+      } catch (err) {
+        console.error("Failed to send new order email:", err);
+      }
 
       return res.status(201).json({ ok: true, order });
     } catch (err) {
