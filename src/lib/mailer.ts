@@ -1,31 +1,12 @@
 // src/lib/mailer.ts
-import nodemailer from "nodemailer";
 import type { IOrder } from "../models/Order";
+import { Resend } from "resend";
 
-type MailConfig = {
-  host: string;
-  port: number;
-  secure: boolean;
-  user?: string;
-  pass?: string;
-  from: string;
-};
-
-function getMailConfig(): MailConfig | null {
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || 0);
-  const from = process.env.SMTP_FROM;
-
-  if (!host || !port || !from) return null;
-
-  return {
-    host,
-    port,
-    secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true",
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-    from,
-  };
+function getResendConfig() {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.RESEND_FROM;
+  if (!apiKey || !from) return null;
+  return { apiKey, from };
 }
 
 export function getAdminEmails(): string[] {
@@ -59,38 +40,26 @@ function formatOrderLines(order: IOrder) {
 }
 
 export async function sendNewOrderEmail(order: IOrder) {
-  const mailConfig = getMailConfig();
-  if (!mailConfig) {
-    console.warn("Email not sent: missing SMTP configuration.");
-    return;
-  }
-
   const adminEmails = getAdminEmails();
   if (adminEmails.length === 0) {
     console.warn("Email not sent: ADMIN_EMAILS is empty.");
     return;
   }
 
-  const transporter = nodemailer.createTransport({
-    host: mailConfig.host,
-    port: mailConfig.port,
-    secure: mailConfig.secure,
-    connectionTimeout: Number(process.env.SMTP_CONNECT_TIMEOUT_MS || 8000),
-    greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS || 8000),
-    socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS || 8000),
-    auth:
-      mailConfig.user && mailConfig.pass
-        ? { user: mailConfig.user, pass: mailConfig.pass }
-        : undefined,
-  });
-
   const subject = `New order received${order._id ? ` (#${order._id})` : ""}`;
   const text = formatOrderLines(order);
 
-  await transporter.sendMail({
-    from: mailConfig.from,
-    to: adminEmails,
-    subject,
-    text,
-  });
+  const resendConfig = getResendConfig();
+  if (resendConfig) {
+    const resend = new Resend(resendConfig.apiKey);
+    await resend.emails.send({
+      from: resendConfig.from,
+      to: adminEmails,
+      subject,
+      text,
+    });
+    return;
+  }
+
+  console.warn("Email not sent: missing RESEND configuration.");
 }
