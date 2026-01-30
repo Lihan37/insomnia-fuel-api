@@ -7,7 +7,8 @@
     "seed:admins": "tsx src/scripts/seedAdmins.ts",
     "check:admins": "tsx src/scripts/checkAdminClaims.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "seed:catering": "tsx src/scripts/seedCatering.ts"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",

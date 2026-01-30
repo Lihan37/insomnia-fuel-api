@@ -24,10 +24,12 @@ function normalizeSubItems(raw: any): { name: string; price: number }[] {
  * GET /api/menu
  * Return all menu items (newest first)
  */
-router.get("/", async (_req, res) => {
+router.get("/", async (req, res) => {
   try {
+    const { category } = req.query as { category?: string };
+    const filter = category ? { category } : {};
     const items = await menuItems()
-      .find({})
+      .find(filter)
       .sort({ createdAt: -1 })
       .toArray();
 
